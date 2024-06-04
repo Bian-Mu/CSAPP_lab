@@ -143,7 +143,7 @@ NOTES:
  *   Rating: 1
  */
 int bitXor(int x, int y) {
-  return 2;
+  return ~(~(~x&y)&~(x&~y));
 }
 /* 
  * tmin - return minimum two's complement integer 
@@ -152,9 +152,7 @@ int bitXor(int x, int y) {
  *   Rating: 1
  */
 int tmin(void) {
-
-  return 2;
-
+  return 1<<31;
 }
 //2
 /*
@@ -165,7 +163,8 @@ int tmin(void) {
  *   Rating: 1
  */
 int isTmax(int x) {
-  return 2;
+  int y=x+1;
+  return !(((~y)+1)^y) & !!y; 
 }
 /* 
  * allOddBits - return 1 if all odd-numbered bits in word set to 1
@@ -176,7 +175,10 @@ int isTmax(int x) {
  *   Rating: 2
  */
 int allOddBits(int x) {
-  return 2;
+  int mask=0xAA;
+  mask=(mask<<8)|mask;
+  mask=(mask<<16)|mask;
+  return !((x&mask)^mask);
 }
 /* 
  * negate - return -x 
@@ -186,7 +188,7 @@ int allOddBits(int x) {
  *   Rating: 2
  */
 int negate(int x) {
-  return 2;
+  return (~x)+1;
 }
 //3
 /* 
@@ -199,7 +201,9 @@ int negate(int x) {
  *   Rating: 3
  */
 int isAsciiDigit(int x) {
-  return 2;
+  int low=x+(~0x30+1);
+  int up=x+(~0x3a+1);
+  return (!(low>>31))&(up>>31);
 }
 /* 
  * conditional - same as x ? y : z 
@@ -209,7 +213,9 @@ int isAsciiDigit(int x) {
  *   Rating: 3
  */
 int conditional(int x, int y, int z) {
-  return 2;
+  int mask=!!x;
+  mask=~mask+1;
+  return (mask&y)|(~mask&z);
 }
 /* 
  * isLessOrEqual - if x <= y  then return 1, else return 0 
@@ -219,7 +225,11 @@ int conditional(int x, int y, int z) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
-  return 2;
+  int diff=y+(~x+1);
+  int xneg=x>>31;
+  int yneg=y>>31;
+  int yoverx=(xneg^yneg)&!y;
+  return yoverx|!(diff>>31);
 }
 //4
 /* 
@@ -231,7 +241,7 @@ int isLessOrEqual(int x, int y) {
  *   Rating: 4 
  */
 int logicalNeg(int x) {
-  return 2;
+  return (((x|(~x+1))>>31)&1)^1;
 }
 /* howManyBits - return the minimum number of bits required to represent x in
  *             two's complement
@@ -246,7 +256,34 @@ int logicalNeg(int x) {
  *  Rating: 4
  */
 int howManyBits(int x) {
-  return 0;
+    int isNegative = x >> 31; // 如果 x 是负数则全部位为 1，如果 x 是正数则全部位为 0
+    x = (isNegative & ~x) | (~isNegative & x); // 如果 x 是负数，则翻转 x
+    // 二分搜索最高位设置
+    int bitCount = 0,temp;
+
+
+    temp = !!(x >> 16) << 4; // 如果高 16 位有 1，则向右移 16 位
+    bitCount += temp;
+    x >>= temp;
+
+    temp = !!(x >> 8) << 3; // 检查接下来的 8 位
+    bitCount += temp;
+    x >>= temp;
+
+    temp = !!(x >> 4) << 2; // 检查接下来的 4 位
+    bitCount += temp;
+    x >>= temp;
+
+    temp = !!(x >> 2) << 1; // 检查接下来的 2 位
+    bitCount += temp;
+    x >>= temp;
+
+    temp = !!(x >> 1); // 检查接下来的 1 位
+    bitCount += temp;
+    x >>= temp;
+
+    bitCount += x; // 添加最后一个位，可能是 0 或 1
+    return bitCount + 1; // 加上符号位
 }
 //float
 /* 
@@ -261,7 +298,26 @@ int howManyBits(int x) {
  *   Rating: 4
  */
 unsigned floatScale2(unsigned uf) {
-  return 2;
+  unsigned sign=uf&0x80000000;
+  unsigned exp=(uf&0x7f800000)>>23;
+  unsigned frac=uf&0x007fffff;
+
+  if(exp==0xff){
+    return uf;
+  }
+  if(exp==0){
+    frac=frac<<1;
+    if(frac&0x00800000){
+      exp++;
+      frac=frac&0x007fffff;
+    }
+    return sign|(exp<<23)|frac;
+  }
+  exp++;
+  if(exp==0xff){
+    return sign|0x7f800000;
+  }
+  return sign|(exp<<23)|frac;
 }
 /* 
  * floatFloat2Int - Return bit-level equivalent of expression (int) f
@@ -276,7 +332,30 @@ unsigned floatScale2(unsigned uf) {
  *   Rating: 4
  */
 int floatFloat2Int(unsigned uf) {
-  return 2;
+  unsigned sign = uf & 0x80000000;
+  int exp = (uf & 0x7F800000) >> 23;
+  unsigned frac = uf & 0x007FFFFF;
+  int actualExp = exp - 127;
+
+  if (exp == 0xFF || actualExp >= 31) {
+    return 0x80000000u;
+  }
+
+  if (actualExp < 0) {
+    return 0;
+  }
+
+  unsigned intMant = (1 << 23) | frac;
+  if (actualExp <= 23) {
+    intMant >>= (23 - actualExp);
+  } else {
+    intMant <<= (actualExp - 23);
+  }
+
+  if (sign) {
+    return -intMant;
+  }
+  return intMant;
 }
 /* 
  * floatPower2 - Return bit-level equivalent of the expression 2.0^x
@@ -292,5 +371,13 @@ int floatFloat2Int(unsigned uf) {
  *   Rating: 4
  */
 unsigned floatPower2(int x) {
-    return 2;
+    if (x > 127) { 
+        return 0x7F800000;
+    }
+    if (x < -126) {
+        return 0;
+    }
+
+    int exp = x + 127;
+    return exp << 23;
 }
