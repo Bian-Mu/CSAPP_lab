@@ -404,7 +404,6 @@ void sigchld_handler(int sig)
     sigfillset(&mask_all);
     sigprocmask(SIG_SETMASK, &mask_all, &pre_mask);
 
-    // recycle died child if exists,the parameters below can return immediately if no died child
  
     while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0)
     {
@@ -412,7 +411,7 @@ void sigchld_handler(int sig)
         if (WIFSTOPPED(status))
         {
             job->state = ST;
-            printf("Job [%d] (%d) terminated by signal 20\n", job->jid, job->pid);
+            printf("Job [%d] (%d) stopped by signal 20\n", job->jid, job->pid);
         }
         else
         {
