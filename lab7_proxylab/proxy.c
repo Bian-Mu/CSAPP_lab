@@ -17,10 +17,29 @@ void read_requesthdrs(rio_t *rp);
 int parse_uri(char *uri, char *host, char *port, char *path);
 void sigpipe_handler(int sig);
 void *thread(void *var);
+typedef struct web_cache
+{
+    char buf[MAX_OBJECT_SIZE];
+
+    int use_times;
+
+    char uri[MAXLINE];
+    int is_init;
+    time_t last_used;
+} web_cache;
+sem_t mutex, writer;
+int readcnt;
+web_cache CACHE[1024];
+void init_cache();
+int read_cache(char *uri);
+int write_cache();
+int get_whole_cache();
+int LRU();
+void clean();
 
 int main(int argc, char **argv)
 {
-    int listenfd,*connfd;
+    int listenfd, *connfd;
     char hostname[MAXLINE], port[MAXLINE];
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
@@ -30,7 +49,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "usage: %s <port>\n", argv[0]);
         exit(0);
     }
-
+    init_cache();
     Signal(SIGPIPE, sigpipe_handler);
     listenfd = Open_listenfd(argv[1]);
     while (1)
@@ -75,15 +94,56 @@ void doit(int fd)
     }
 
     // 请求有效，建立连接并请求指定对象
+
+    if (read_cache(uri) != -1)
+    {
+        int index = read_cache(uri);
+        P(&mutex);
+        readcnt++;
+        if (readcnt == 1)
+            P(&writer);
+        V(&mutex);
+
+        Rio_writen(fd, CACHE[index].buf, sizeof(CACHE[index].buf));
+        
+        P(&mutex);
+        readcnt--;
+        if (readcnt == 0)
+            V(&writer);
+        V(&mutex);
+
+        CACHE[index].use_times++;
+        CACHE[index].last_used = time(NULL);
+        return;
+    }
+
+
     response_fd = Open_clientfd(host, port);
     Rio_readinitb(&response_io, response_fd);
 
     sprintf(response_buf, "GET %s HTTP/1.0\r\nHost: %s\r\n%s%s%s\r\n", path, host, user_agent_hdr, connection_hdr, pxy_connection_hdr);
     Rio_writen(response_fd, response_buf, strlen(response_buf));
-
+    int size = 0;
     while ((n = Rio_readlineb(&response_io, response_buf, MAXLINE)) != 0)
     {
+        size += n;
         Rio_writen(fd, response_buf, n);
+        if (size < MAX_OBJECT_SIZE)
+        {
+            strcat(cache, response_buf);
+        }
+    }
+    if (size <= MAX_OBJECT_SIZE)
+    {
+        P(&writer);
+        int index = write_cache();
+        strcpy(CACHE[index].uri, uri);
+        strcpy(CACHE[index].buf, cache);
+        CACHE[index].use_times++;
+        CACHE[index].is_init = 1;
+        CACHE[index].last_used = time(NULL);
+        V(&writer);
+        clean();
     }
 
     Close(response_fd);
@@ -176,4 +236,83 @@ void *thread(void *vargp)
     doit(connfd);
     Close(connfd);
     return NULL;
+}
+
+void init_cache()
+{
+    for (int i = 0; i < 1024; i++)
+    {
+        CACHE[i].use_times = 0;
+        CACHE[i].is_init = 0;
+        readcnt = 0;
+        sem_init(&mutex, 0, 1);
+        sem_init(&writer, 0, 1);
+    }
+}
+int get_whole_cache()
+{
+    int size = 0;
+    for (int i = 0; i < 1024; i++)
+    {
+        if (CACHE[i].is_init)
+        {
+            size += strlen(CACHE[i].buf);
+        }
+    }
+    return size;
+}
+int read_cache(char *uri)
+{
+    for (int i = 0; i < 1024; i++)
+    {
+        if (CACHE[i].is_init && !strcmp(CACHE[i].uri, uri))
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+int write_cache()
+{
+
+    for (int i = 0; i < 1024; i++)
+    {
+        if (!CACHE[i].is_init)
+        {
+            return i;
+        }
+    }
+
+    return LRU();
+}
+
+void clean()
+{
+    while (get_whole_cache() > MAX_CACHE_SIZE)
+    {
+        LRU();
+    }
+}
+
+int LRU()
+{
+    int oldest_index = 0;
+    time_t oldest_time = time(NULL);
+
+    for (int i = 0; i < 1024; i++)
+    {
+        if (CACHE[i].is_init && CACHE[i].last_used < oldest_time)
+        {
+            oldest_time = CACHE[i].last_used;
+            oldest_index = i;
+        }
+    }
+
+    memset(CACHE[oldest_index].buf, 0, sizeof(CACHE[oldest_index].buf));
+    memset(CACHE[oldest_index].uri, 0, sizeof(CACHE[oldest_index].uri));
+    CACHE[oldest_index].use_times = 0;
+    CACHE[oldest_index].is_init = 0;
+    sem_init(&mutex, 0, 1);
+
+    return oldest_index;
 }
